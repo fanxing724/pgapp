@@ -1,0 +1,33 @@
+{
+  "accounts": [
+    {
+      "name": "账号1",
+      "token": "粘贴Token到这里",
+      "device_id": "粘贴设备ID",
+      "app_secret": "bkZVOXBiRzhZUW9BZTFrRmgrRTdleXJkbFNMZ2x3RUplQTB3d0hCMWo1bz0=",
+      "version": "1.144.0",
+      "phone_brand": "Xiaomi",
+      "enabled": true
+    },
+    {
+      "name": "账号2",
+      "token": "",
+      "device_id": "",
+      "app_secret": "bkZVOXBiRzhZUW9BZTFrRmgrRTdleXJkbFNMZ2x3RUplQTB3d0hCMWo1bz0=",
+      "version": "1.144.0",
+      "phone_brand": "Huawei",
+      "enabled": false
+    }
+  ],
+  "schedule": {
+    "auto_sign": true,
+    "watch_ad": true,
+    "retry_on_fail": true,
+    "max_retry": 3
+  },
+  "notification": {
+    "enabled": false,
+    "type": "serverchan",
+    "key": "你的Server酱Key"
+  }
+}
