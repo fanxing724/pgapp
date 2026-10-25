@@ -13,6 +13,8 @@
 | **商城 URL** | BuildConfig.MALL_HOST_URL (QeService) |
 | **YApi Mock** | `http://yapi.qiekj.com/mock/11/` |
 
+> ✅ **端点验证说明**：本报告中签到/广告/任务等关键接口的 URL 路径已通过 apktool 反编译的 `ApiService.smali` 中 Retrofit `@POST/@GET` 注解逐一验证（共提取 300 个真实端点），不再是推测。完整清单见 [ApiService_真实端点清单.md](ApiService_真实端点清单.md)。标注"推断路径"的章节仍为早期推测结果，仅供参考。
+
 ---
 
 ## 一、API 服务架构概览
@@ -240,40 +242,40 @@ orderRiskSign = SHA-256("appSecret={LOCATION_SECRET}&categoryCode={code}&channel
 | `timedBenefit` | `benefit/timed` | 定时福利 |
 | `timedBenefitReward` | `benefit/timed/reward` | 定时福利奖励 |
 
-#### ⭐ 积分与任务 (30个)
+#### ⭐ 积分与任务 (30个) — ✅ 真实路径（smali 验证）
 
-| 方法名 | 推断路径 | 功能描述 |
+| 方法名 | 真实路径 | 功能描述 |
 |--------|---------|---------|
-| `userIntegralRule` | `userIntegral/rule` | 积分规则 |
-| `integralTaskList` | `userIntegral/task/list` | 积分任务列表 |
-| `integralCaptcha` | `userIntegral/captcha` | 积分验证码 |
-| `integralDailStatistics` | `userIntegral/daily/stats` | 每日积分统计 |
-| `integralLayer` | `userIntegral/layer` | 积分层级 |
-| `integralGoodsPage` | `userIntegral/goods/page` | 积分商品分页 |
-| `integralUmpConfig` | `userIntegral/ump/config` | 积分UMP配置 |
-| `consumeIntegralRate` | `userIntegral/consume/rate` | 积分消耗比率 |
-| `rewardIntegral` | `userIntegral/reward` | 奖励积分 |
-| `applyTask` | `task/apply` | 申请任务 |
-| `applyTaskPackage` | `task/package/apply` | 申请任务包 |
-| `queryTask` | `task/query` | 查询任务 |
-| `queryTaskAccount` | `task/account/query` | 任务账户查询 |
-| `queryTaskByTime` | `task/query/byTime` | 按时间查任务 |
-| `queryTaskPackage` | `task/package/query` | 查询任务包 |
-| `queryThirdTask` | `task/third/query` | 第三方任务查询 |
-| `queryPushTask` | `task/push/query` | 推送任务查询 |
-| `taskApplyCost` | `task/apply/cost` | 任务申请成本 |
-| `taskBubble` | `task/bubble` | 任务气泡 |
+| `userIntegralRule` | `userIntegral/limitRule` | 积分规则 |
+| `integralTaskList` | `task/list` | 积分任务列表 |
+| `integralCaptcha` | `integralCaptcha/isCaptcha` | 积分验证码 |
+| `integralDailStatistics` | `integralRecord/integralDailStatistics` | 每日积分统计 |
+| `integralLayer` | `userIntegral/userIntegralLayer` | 积分层级 |
+| `integralGoodsPage` | `integralGoods/queryIntegralGoodsPage` | 积分商品分页 |
+| `integralUmpConfig` | `integralUmp/config` (GET) | 积分UMP配置 |
+| `consumeIntegralRate` | `integralUmp/consumeIntegralRateForDay` (GET) | 积分消耗比率 |
+| `rewardIntegral` | `integralUmp/rewardIntegral` | 奖励积分 |
+| `applyTask` | `markActivity/doApplyTask` | 申请任务 |
+| `applyTaskPackage` | `taskPackage/applyTask` (GET) | 申请任务包 |
+| `queryTask` | `task/queryByType` | 查询任务 |
+| `queryTaskAccount` | `markActivity/queryMarkTaskAccount` | 任务账户查询 |
+| `queryTaskByTime` | `markActivity/queryMarkTaskByStartTime` | 按时间查任务 |
+| `queryTaskPackage` | `taskPackage/queryApplyTask` (GET) | 查询任务包 |
+| `queryThirdTask` | `task/queryThirdPartyJumpLink` | 第三方任务查询 |
+| `queryPushTask` | `task/queryPushTask` | 推送任务查询 |
+| `taskApplyCost` | `markActivity/markTaskApplyCost` (GET) | 任务申请成本 |
+| `taskBubble` | `task/taskBubble` | 任务气泡 |
 | `taskCompleted` | `task/completed` | 任务完成 |
-| `taskReward` | `task/reward` | 任务奖励 |
-| `taskPackageReward` | `task/package/reward` | 任务包奖励 |
-| `getTaskReward` | `task/getReward` | 获取任务奖励 |
-| `doMarkTask` | `task/mark/do` | 标记任务 |
-| `guideTaskList` | `task/guide/list` | 引导任务列表 |
-| `pageOnlineEarnTask` | `task/online/earn/page` | 在线赚任务分页 |
-| `earnBenefitsTask` | `task/benefits/earn` | 赚取福利任务 |
-| `ladderTask` | `task/ladder` | 阶梯任务 |
-| `applyLadderReward` | `task/ladder/apply` | 申请阶梯奖励 |
-| `queryAsyncReward` | `task/async/reward` | 异步奖励查询 |
+| `taskReward` | `markActivity/markTaskReward` | 任务奖励 |
+| `taskPackageReward` | `taskPackage/applyReward` | 任务包奖励 |
+| `getTaskReward` | `task/getTaskReward` | 获取任务奖励 |
+| `doMarkTask` | `markActivity/doMarkTask` | 标记任务 |
+| `guideTaskList` | `taskPackage/drainageTaskList` | 引导任务列表 |
+| `pageOnlineEarnTask` | `onlineEarn/pageOnlineEarnTask` | 在线赚任务分页 |
+| `earnBenefitsTask` | `task/earnBenefitsTask` | 赚取福利任务 |
+| `ladderTask` | `ladderTask/ladderTaskForDay` (GET) | 阶梯任务 |
+| `applyLadderReward` | `ladderTask/applyLadderReward` | 申请阶梯奖励 |
+| `queryAsyncReward` | `task/queryAsyncReward` | 异步奖励查询 |
 
 #### 👑 VIP 会员 (18个)
 
@@ -348,16 +350,16 @@ orderRiskSign = SHA-256("appSecret={LOCATION_SECRET}&categoryCode={code}&channel
 | `serectReport` | `report/secret` | 密报 |
 | `newcomerContext` | `user/newcomer/context` | 新人上下文 |
 
-#### 📊 签到与活跃 (12个)
+#### 📊 签到与活跃 (12个) — ✅ 真实路径（smali 验证）
 
-| 方法名 | 推断路径 | 功能描述 |
+| 方法名 | 真实路径 | 功能描述 |
 |--------|---------|---------|
-| `todaySignIn` | `signIn/today` | 今日签到 |
-| `userSignIn` | `signIn/user` | 用户签到 |
-| `signInAct` | `signIn/activity` | 签到活动 |
-| `isSign` | `signIn/isSign` | 是否已签到 |
-| `unionIsSign` | `signIn/union/isSign` | 联合签到状态 |
-| `weeklyConDay` | `signIn/weekly/conDay` | 周连续签到天数 |
+| `todaySignIn` | `signin/todaySignIn` | 查询今日签到状态 |
+| `userSignIn` | `signin/doUserSignIn` | 执行用户签到 |
+| `signInAct` | `signin/signInAcList` | 签到活动列表 |
+| `isSign` | `alipay/isSign` | 支付宝签约状态 |
+| `unionIsSign` | `unionpay/isSign` | 银联签约状态 |
+| `weeklyConDay` | `signin/weeklyConDays` | 周连续签到天数 |
 | `checkCaptcha` | `captcha/check` | 验证码校验 |
 | `isNeedCaptcha` | `captcha/isNeed` | 是否需要验证码 |
 | `queryVersion` | `app/version/query` | 查询版本 |
@@ -384,13 +386,13 @@ orderRiskSign = SHA-256("appSecret={LOCATION_SECRET}&categoryCode={code}&channel
 
 | 方法名 | 推断路径 | 功能描述 |
 |--------|---------|---------|
-| `adStatus` | `ad/status` | 广告状态 |
-| `getAd` | `ad/get` | 获取广告 |
-| `aliYunHitAd` | `ad/aliyun/hit` | 阿里云命中广告 |
-| `baiduAdTrack` | `ad/baidu/track` | 百度广告追踪 |
-| `baiduConversion` | `ad/baidu/conversion` | 百度转化 |
-| `admediaFinishFlag` | `ad/media/finish` | 广告媒体完成标记 |
-| `reportAdAction` | `ad/action/report` | 上报广告行为 |
+| `adStatus` | `alipay/tap/adStatus` ✅ | 广告状态 |
+| `getAd` | `slot/get` ✅ | 获取广告 |
+| `aliYunHitAd` | `aliyun/imarketing/hitAd` ✅ | 阿里云命中广告 |
+| `baiduAdTrack` | `task/adTrack` ✅ | 百度广告追踪 |
+| `baiduConversion` | `task/baiduConversionCallback` ✅ | 百度转化 |
+| `admediaFinishFlag` | `alipay/admedia/finishFlag` ✅ | 广告媒体完成标记 |
+| `reportAdAction` | `slot/action/report` ✅ | 上报广告行为 |
 | `getAudioFlag` | `config/audio/flag` | 音频标志 |
 | `chargeUrl` | `config/charge/url` | 充值URL |
 | `cpaDefault` | `config/cpa/default` | CPA默认配置 |

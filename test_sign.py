@@ -27,7 +27,7 @@ def test_sign_algorithm():
     pass
     
     # 测试路径
-    test_path = "signIn/today"
+    test_path = "signin/doUserSignIn"
     test_timestamp = "1698240000000"
     
     # 生成签名
@@ -89,12 +89,12 @@ def test_endpoints():
     print("="*60)
     
     endpoints = [
-        ("signIn/isSign", "检查签到状态"),
-        ("signIn/today", "执行签到"),
-        ("signIn/activity", "获取签到活动"),
-        ("ad/status", "检查广告状态"),
-        ("ad/media/finish", "上报广告完成"),
-        ("task/getReward", "领取任务奖励"),
+        ("signin/todaySignIn", "检查签到状态"),
+        ("signin/doUserSignIn", "执行签到"),
+        ("signin/signInAcList", "获取签到活动"),
+        ("alipay/tap/adStatus", "检查广告状态"),
+        ("alipay/admedia/finishFlag", "上报广告完成"),
+        ("task/getTaskReward", "领取任务奖励"),
         ("user/info", "获取用户信息"),
     ]
     

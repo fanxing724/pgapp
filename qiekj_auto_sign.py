@@ -109,13 +109,18 @@ class QieKjAutoSign:
     def check_sign_status(self) -> bool:
         """
         检查今日是否已签到
-        接口: signIn/isSign
+        接口: signin/todaySignIn
         """
         print("🔍 检查签到状态...")
-        result = self._post("signIn/isSign")
+        result = self._post("signin/todaySignIn")
         
         if result.get("code") == 200:
-            is_signed = result.get("data", False)
+            data = result.get("data", False)
+            # data 可能是布尔值或包含签到信息的对象
+            if isinstance(data, bool):
+                is_signed = data
+            else:
+                is_signed = data.get('signed', False) if isinstance(data, dict) else False
             status = "✅ 已签到" if is_signed else "⏳ 未签到"
             print(f"   状态: {status}")
             return is_signed
@@ -126,10 +131,10 @@ class QieKjAutoSign:
     def do_sign_in(self) -> Dict[str, Any]:
         """
         执行签到
-        接口: signIn/today
+        接口: signin/doUserSignIn
         """
         print("📝 执行签到...")
-        result = self._post("signIn/today")
+        result = self._post("signin/doUserSignIn")
         
         if result.get("code") == 200:
             data = result.get("data", {})
@@ -144,10 +149,10 @@ class QieKjAutoSign:
     def get_sign_activity(self) -> Dict[str, Any]:
         """
         获取签到活动信息
-        接口: signIn/activity
+        接口: signin/signInAcList
         """
         print("🎯 获取签到活动信息...")
-        result = self._post("signIn/activity")
+        result = self._post("signin/signInAcList")
         
         if result.get("code") == 200:
             data = result.get("data", [])
@@ -162,10 +167,10 @@ class QieKjAutoSign:
     def check_ad_status(self) -> bool:
         """
         检查广告状态
-        接口: ad/status
+        接口: alipay/tap/adStatus
         """
         print("📺 检查广告状态...")
-        result = self._post("ad/status")
+        result = self._post("alipay/tap/adStatus")
         
         if result.get("code") == 200:
             can_watch = result.get("data", False)
@@ -179,10 +184,10 @@ class QieKjAutoSign:
     def report_ad_finish(self) -> bool:
         """
         上报广告完成
-        接口: ad/media/finish
+        接口: alipay/admedia/finishFlag
         """
         print("✅ 上报广告完成...")
-        result = self._post("ad/media/finish")
+        result = self._post("alipay/admedia/finishFlag")
         
         if result.get("code") == 200:
             print("   ✅ 广告完成上报成功")
@@ -194,14 +199,14 @@ class QieKjAutoSign:
     def get_task_reward(self, task_id: str = "") -> Dict[str, Any]:
         """
         领取任务奖励
-        接口: task/getReward
+        接口: task/getTaskReward
         """
         print("🎁 领取任务奖励...")
         data = {}
         if task_id:
             data["taskId"] = task_id
         
-        result = self._post("task/getReward", data)
+        result = self._post("task/getTaskReward", data)
         
         if result.get("code") == 200:
             rewards = result.get("data", [])
@@ -216,10 +221,10 @@ class QieKjAutoSign:
     def apply_task(self, task_id: str) -> bool:
         """
         申请完成任务
-        接口: task/apply
+        接口: markActivity/doApplyTask
         """
         print(f"📋 申请任务 {task_id}...")
-        result = self._post("task/apply", {"taskId": task_id})
+        result = self._post("markActivity/doApplyTask", {"taskId": task_id})
         
         if result.get("code") == 200:
             print("   ✅ 任务申请成功")
@@ -231,10 +236,10 @@ class QieKjAutoSign:
     def mark_task_done(self, task_id: str) -> bool:
         """
         标记任务完成
-        接口: task/mark/do
+        接口: markActivity/doMarkTask
         """
         print(f"✅ 标记任务 {task_id} 完成...")
-        result = self._post("task/mark/do", {"taskId": task_id})
+        result = self._post("markActivity/doMarkTask", {"taskId": task_id})
         
         if result.get("code") == 200:
             print("   ✅ 任务标记成功")

@@ -125,10 +125,16 @@ class GitHubAutoSign:
     def check_sign_status(self) -> bool:
         """检查今日是否已签到"""
         self.log("🔍 检查签到状态...")
-        result = self._post("signIn/isSign")
+        result = self._post("signin/todaySignIn")
         
         if result.get("code") == 200:
-            is_signed = result.get("data", False)
+            data = result.get("data", {})
+            # data 可能是布尔值或包含签到信息的对象
+            if isinstance(data, bool):
+                is_signed = data
+            else:
+                is_signed = data.get('signed', False) if isinstance(data, dict) else False
+            
             if is_signed:
                 self.log("✅ 今日已签到", "NOTICE")
             else:
@@ -141,7 +147,7 @@ class GitHubAutoSign:
     def do_sign_in(self) -> bool:
         """执行签到"""
         self.log("📝 执行签到...")
-        result = self._post("signIn/today")
+        result = self._post("signin/doUserSignIn")
         
         if result.get("code") == 200:
             data = result.get("data", {})
@@ -157,7 +163,7 @@ class GitHubAutoSign:
     def check_ad_status(self) -> bool:
         """检查广告状态"""
         self.log("📺 检查广告状态...")
-        result = self._post("ad/status")
+        result = self._post("alipay/tap/adStatus")
         
         if result.get("code") == 200:
             can_watch = result.get("data", False)
@@ -173,7 +179,7 @@ class GitHubAutoSign:
     def report_ad_finish(self) -> bool:
         """上报广告完成"""
         self.log("✅ 上报广告完成...")
-        result = self._post("ad/media/finish")
+        result = self._post("alipay/admedia/finishFlag")
         
         if result.get("code") == 200:
             self.log("✅ 广告完成上报成功")
@@ -185,7 +191,7 @@ class GitHubAutoSign:
     def get_task_reward(self) -> bool:
         """领取任务奖励"""
         self.log("🎁 领取任务奖励...")
-        result = self._post("task/getReward")
+        result = self._post("task/getTaskReward")
         
         if result.get("code") == 200:
             rewards = result.get("data", [])
