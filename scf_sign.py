@@ -184,37 +184,20 @@ class QieKjSigner:
         return True
 
 
-def should_run_today_slot():
-    """
-    按日期 MD5 在 8/12/18 点三个时段中选一个（与 GitHub 版逻辑一致）
-    返回 (是否当前时段, 选中的时段名)
-    """
-    beijing = datetime.now(timezone(timedelta(hours=8)))
-    today = beijing.strftime("%Y%m%d")
-    slot = int(hashlib.md5(today.encode()).hexdigest()[:8], 16) % 3
-    slot_hours = [8, 12, 18]
-    target = slot_hours[slot]
-    current = beijing.hour
-    log(f"📅 今天: {today} | 🎲 选中时段: {target}:00 | ⏰ 当前: {current}:00 (北京时间)")
-    return current == target, f"{target}:00"
-
-
 def main_handler(event, context):
-    """SCF 入口函数"""
-    # 定时触发器触发时检查时段；手动测试（控制台"测试"按钮）强制执行
+    """SCF 入口函数：每天 12:00 定时触发（随机延迟 0-10 分钟模拟真人）"""
+    beijing = datetime.now(timezone(timedelta(hours=8)))
+    log(f"📅 触发时间: {beijing.strftime('%Y-%m-%d %H:%M:%S')} (北京时间)")
+
+    # 随机延迟 0-600 秒，模拟真人操作（SCF 超时时间需 ≥ 900 秒）
+    # 手动测试（控制台"测试"按钮）不延迟，直接执行
     is_timer = "Time" in json.dumps(event) or event.get("Type") == "Timer"
     if is_timer:
-        match, slot_name = should_run_today_slot()
-        if not match:
-            msg = f"⏭️ 今天不在此时段执行（今日时段: {slot_name}），跳过"
-            log(msg)
-            return msg
-        # 随机延迟 0-600 秒，模拟真人操作（SCF 超时时间需 ≥ 900 秒）
         delay = random.randint(0, 600)
         log(f"⏳ 随机延迟 {delay} 秒...")
         time.sleep(delay)
     else:
-        log("🔧 手动测试触发，强制执行")
+        log("🔧 手动测试触发，跳过延迟直接执行")
 
     token = TOKEN
     if not token:
