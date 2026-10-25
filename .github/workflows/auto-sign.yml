@@ -2,60 +2,107 @@ name: 切客纪自动签到
 
 on:
   schedule:
-    # 每天 UTC 0:00 (北京时间 8:00) 执行
+    # 北京时间 8:00 (UTC 0:00)
     - cron: '0 0 * * *'
-    # 每天 UTC 12:00 (北京时间 20:00) 执行（备用）
-    - cron: '0 12 * * *'
-  
+    # 北京时间 12:00 (UTC 4:00)
+    - cron: '0 4 * * *'
+    # 北京时间 18:00 (UTC 10:00)
+    - cron: '0 10 * * *'
+
   # 允许手动触发
   workflow_dispatch:
-    inputs:
-      account_index:
-        description: '账号索引（留空则全部执行）'
-        required: false
-        default: ''
+
+# 防止并发执行
+concurrency:
+  group: auto-sign
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   auto-sign:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 30
+
     steps:
+      - name: 🎲 检查今日执行时间
+        id: time_check
+        run: |
+          # 使用日期的 MD5 哈希确定今天应该在哪个时间点执行（真随机分布）
+          # 0 = 8:00, 1 = 12:00, 2 = 18:00（北京时间）
+          TODAY=$(date -u +%Y%m%d)
+          HASH=$(echo -n "$TODAY" | md5sum | cut -d' ' -f1)
+          CHOSEN_SLOT=$((16#${HASH:0:8} % 3))
+
+          # 获取当前 UTC 小时（去掉前导零）
+          CURRENT_HOUR=$(date -u +%H | sed 's/^0//')
+          CURRENT_HOUR=${CURRENT_HOUR:-0}
+
+          # 时间点映射到 UTC 小时
+          # slot 0 → UTC 0 (北京 8:00)
+          # slot 1 → UTC 4 (北京 12:00)
+          # slot 2 → UTC 10 (北京 18:00)
+          SLOT_HOURS=(0 4 10)
+          SLOT_NAMES=("8:00" "12:00" "18:00")
+          TARGET_HOUR=${SLOT_HOURS[$CHOSEN_SLOT]}
+
+          echo "📅 今天日期: $TODAY"
+          echo "🎲 今日执行时间: 北京时间 ${SLOT_NAMES[$CHOSEN_SLOT]}"
+          echo "⏰ 当前 UTC 时间: ${CURRENT_HOUR}:00"
+
+          if [ "$CURRENT_HOUR" -eq "$TARGET_HOUR" ]; then
+            echo "✅ 时间匹配，将执行签到"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "⏭️  今天不在此时间点执行，跳过"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: ⏭️ 跳过执行
+        if: steps.time_check.outputs.should_run == 'false'
+        run: |
+          echo "今天已在其他时间点执行或不在此时间点执行"
+          echo "明天会随机选择不同的时间点"
+
       - name: 📥 检出代码
+        if: steps.time_check.outputs.should_run == 'true'
         uses: actions/checkout@v4
-      
+
       - name: 🐍 设置 Python
+        if: steps.time_check.outputs.should_run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: 📦 安装依赖
+        if: steps.time_check.outputs.should_run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install requests
-      
-      - name: 🔐 创建配置文件
+
+      - name: ⏳ 随机延迟（模拟真人操作）
+        if: steps.time_check.outputs.should_run == 'true'
+        run: |
+          # 随机延迟 0-600 秒（0-10 分钟）
+          DELAY=$((RANDOM % 600))
+          echo "⏳ 随机延迟 ${DELAY} 秒，模拟真人操作时间..."
+          sleep $DELAY
+
+      - name: ✅ 执行签到
+        if: steps.time_check.outputs.should_run == 'true'
         env:
           ACCOUNTS_CONFIG: ${{ secrets.ACCOUNTS_CONFIG }}
+          QIEKJ_TOKEN: ${{ secrets.QIEKJ_TOKEN }}
+          QIEKJ_DEVICE_ID: ${{ secrets.QIEKJ_DEVICE_ID }}
+          QIEKJ_NAME: ${{ secrets.QIEKJ_NAME }}
+          QIEKJ_PHONE_BRAND: ${{ secrets.QIEKJ_PHONE_BRAND }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: |
-          echo "$ACCOUNTS_CONFIG" > config.json
-          chmod 600 config.json
-      
-      - name: ✅ 执行签到
-        run: |
-          python3 auto_sign_advanced.py
-      
-      - name: 📤 上传日志
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sign-logs-${{ github.run_number }}
-          path: |
-            *.log
-            config.json
-          retention-days: 7
-      
+          python3 github_sign.py
+
       - name: 📊 输出结果
-        if: always()
+        if: steps.time_check.outputs.should_run == 'true'
         run: |
           echo "签到任务执行完成"
-          echo "执行时间: $(date '+%Y-%m-%d %H:%M:%S')"
+          echo "执行时间: $(date '+%Y-%m-%d %H:%M:%S') UTC"
