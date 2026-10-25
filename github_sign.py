@@ -174,63 +174,121 @@ class GitHubAutoSign:
             self.log(f"❌ 签到失败: {msg}", "ERROR")
             return False
     
-    def check_ad_status(self) -> bool:
-        """检查广告状态"""
-        self.log("📺 检查广告状态...")
-        result = self._post("alipay/tap/adStatus")
-        
+    def _get(self, path: str, params: Optional[Dict] = None) -> Dict[str, Any]:
+        """发送 GET 请求（与官方 APP 一致：token 放 query 参数）"""
+        headers = self._build_headers(path)
+        url = f"{self.base_url}{path}"
+        query = dict(params or {})
+        query["token"] = self.account.token
+        try:
+            resp = self.session.get(url, headers=headers, params=query, timeout=30)
+            return resp.json()
+        except Exception as e:
+            self.log(f"❌ 请求异常: {e}", "ERROR")
+            return {"code": -999, "msg": str(e)}
+
+    def claim_timed_benefit(self) -> bool:
+        """
+        定时福利（积分页"点击领积分"）
+        真实流程（来自 IntegralFragment / SignInViewModel 逆向）:
+          1. GET timedBenefit/queryTimedBenefit 查询状态
+             applyStatus: 1=倒计时中(surplusTime秒后可领) 2=可领取 3/4=明日再领
+          2. applyStatus==2 时 POST integralCaptcha/isCaptcha 检查风控
+          3. 无需验证码则 GET timedBenefit/applyRewardForTimeBenefit 领取
+        注意: 该接口有服务器侧风控/时段限制，纯 API 领取可能被拒（"福利奖励领取失败"），
+              失败不影响签到主流程，仅记录日志。
+        """
+        self.log("🎁 检查定时福利...")
+        result = self._get("timedBenefit/queryTimedBenefit")
+
+        if result.get("code") != 0:  # 成功码是0，不是200
+            self.log(f"⚠️ 查询定时福利失败: {result.get('msg', '未知错误')}", "WARNING")
+            return False
+
+        data = result.get("data") or {}
+        status = data.get("applyStatus")
+        next_reward = data.get("nextRewardNum", 0)
+        surplus = data.get("surplusTime")
+        freq = data.get("applyFreq", 0)
+
+        if status == 1:
+            self.log(f"⏳ 定时福利倒计时中，{surplus}秒后可领 +{next_reward} 积分")
+            return False
+        elif status in (3, 4):
+            self.log(f"ℹ️ 今日定时福利已领完（已领{freq}次），明日再领")
+            return False
+        elif status != 2:
+            self.log(f"ℹ️ 定时福利状态未知(applyStatus={status})")
+            return False
+
+        # applyStatus == 2: 可领取
+        self.log(f"🎯 定时福利可领取 +{next_reward} 积分，尝试领取...")
+        time.sleep(1)  # 模拟真实操作间隔
+
+        # 风控检查（与 APP 一致）
+        captcha = self._post("integralCaptcha/isCaptcha")
+        if captcha.get("code") == 0 and captcha.get("data") is True:
+            self.log("⚠️ 触发风控验证码，无法自动领取", "WARNING")
+            return False
+
+        claim = self._get("timedBenefit/applyRewardForTimeBenefit")
+        if claim.get("code") == 0:  # 成功码是0，不是200
+            self.log(f"✅ 定时福利领取成功! +{next_reward} 积分", "NOTICE")
+            return True
+        else:
+            # 服务器风控拒绝（纯 API 常见），仅记录不报错
+            self.log(f"⚠️ 定时福利领取被拒: {claim.get('msg', '未知')}（服务器风控，需真实APP环境）", "WARNING")
+            return False
+
+    def query_video_task(self) -> None:
+        """
+        查询"看视频赚积分"任务状态（仅报告，无法纯API完成）
+        实测验证: task/getTaskReward 虽返回成功但服务器有 TopOn 广告 SDK
+        服务端校验，未真实观看不发奖励（completedFreq 不变、积分不到账）。
+        """
+        self.log("📺 查询视频任务状态...")
+        result = self._post("task/queryPushTask")
+
         if result.get("code") == 0:  # 成功码是0，不是200
-            can_watch = result.get("data", False)
-            if can_watch:
-                self.log("✅ 有可观看广告")
+            data = result.get("data") or {}
+            title = data.get("title", "看视频赚积分")
+            done = data.get("completedFreq", 0)
+            limit = data.get("dailyTaskLimit", 0)
+            points = (data.get("extendMap") or {}).get("awardPoint") or []
+            per = points[0] if points else data.get("awardNumber", "?")
+            if done < limit:
+                self.log(f"ℹ️ 「{title}」今日 {done}/{limit} 次，每次 +{per} 积分（需在APP内观看激励视频，纯API无法完成）")
             else:
-                self.log("⏸️ 暂无可观看广告")
-            return can_watch
+                self.log(f"✅ 「{title}」今日已完成 {done}/{limit} 次")
         else:
-            self.log(f"❌ 查询广告状态失败: {result.get('msg', '未知错误')}", "WARNING")
-            return False
-    
-    def report_ad_finish(self) -> bool:
-        """上报广告完成"""
-        self.log("✅ 上报广告完成...")
-        result = self._post("alipay/admedia/finishFlag")
-        
+            self.log(f"⚠️ 查询视频任务失败: {result.get('msg', '未知错误')}", "WARNING")
+
+    def report_integral_stats(self) -> None:
+        """报告今日积分统计"""
+        self.log("📊 查询今日积分统计...")
+        result = self._post("integralRecord/integralDailStatistics")
+
         if result.get("code") == 0:  # 成功码是0，不是200
-            self.log("✅ 广告完成上报成功")
-            return True
+            data = result.get("data") or {}
+            earned = data.get("dailyEarnIntegral", 0)
+            ratio = data.get("ratio", "N/A")
+            self.log(f"   今日已赚积分: +{earned}（击败 {ratio} 用户）", "NOTICE")
         else:
-            self.log(f"❌ 广告上报失败: {result.get('msg', '未知错误')}", "WARNING")
-            return False
-    
-    def get_task_reward(self) -> bool:
-        """领取任务奖励"""
-        self.log("🎁 领取任务奖励...")
-        result = self._post("task/getTaskReward")
-        
-        if result.get("code") == 0:  # 成功码是0，不是200
-            rewards = result.get("data", [])
-            self.log(f"✅ 领取成功! 获得 {len(rewards)} 个奖励", "NOTICE")
-            for reward in rewards:
-                name = reward.get('name', 'N/A')
-                value = reward.get('value', 'N/A')
-                self.log(f"   - {name}: {value}")
-            return True
-        else:
-            self.log(f"❌ 领取奖励失败: {result.get('msg', '未知错误')}", "WARNING")
-            return False
-    
+            self.log(f"⚠️ 查询积分统计失败: {result.get('msg', '未知错误')}", "WARNING")
+
     def get_user_info(self) -> bool:
         """获取用户信息"""
         self.log("👤 获取用户信息...")
         result = self._post("user/info")
-        
+
         if result.get("code") == 0:  # 成功码是0，不是200
-            data = result.get("data", {})
-            nickname = data.get('nickname', 'N/A')
-            integral = data.get('integral', 'N/A')
+            data = result.get("data") or {}
+            # 真实响应字段: userName / balance / phone（无 integral 字段）
+            nickname = data.get('userName', 'N/A')
             balance = data.get('balance', 'N/A')
+            phone = data.get('phone', 'N/A')
             self.log(f"   昵称: {nickname}")
-            self.log(f"   积分: {integral}")
+            self.log(f"   手机号: {phone}")
             self.log(f"   余额: {balance}")
             return True
         else:
@@ -243,28 +301,25 @@ class GitHubAutoSign:
         self.log(f"🚀 开始处理账号: {self.account.name}")
         self.log(f"{'='*60}\n")
         
-        # 1. 检查签到状态
+        # 1. 检查签到状态：已签到只跳过签到步骤，其余流程照常执行
         if self.check_sign_status():
-            self.log("⚠️ 今日已签到，跳过", "NOTICE")
-            return True
-        
-        # 2. 执行签到
-        if not self.do_sign_in():
-            self.log("❌ 签到失败，终止流程", "ERROR")
-            return False
-        
-        # 3. 检查并观看广告
+            self.log("⚠️ 今日已签到，跳过签到步骤", "NOTICE")
+        else:
+            # 2. 执行签到
+            if not self.do_sign_in():
+                self.log("❌ 签到失败（继续尝试福利/任务流程）", "ERROR")
+
+        # 3. 定时福利（可领时自动尝试领取；被风控则记录日志）
         self.log(f"\n{'-'*60}")
-        if self.check_ad_status():
-            self.log("⏳ 模拟观看广告 (5秒)...")
-            time.sleep(5)
-            
-            if self.report_ad_finish():
-                time.sleep(1)
-                self.get_task_reward()
-        
-        # 4. 获取用户信息
+        self.claim_timed_benefit()
+
+        # 4. 视频任务状态（仅报告，需真实观看广告）
         self.log(f"\n{'-'*60}")
+        self.query_video_task()
+
+        # 5. 今日积分统计 + 用户信息
+        self.log(f"\n{'-'*60}")
+        self.report_integral_stats()
         self.get_user_info()
         
         self.log(f"\n{'='*60}")
