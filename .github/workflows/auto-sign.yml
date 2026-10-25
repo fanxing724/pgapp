@@ -29,6 +29,13 @@ jobs:
       - name: 🎲 检查今日执行时间
         id: time_check
         run: |
+          # 手动触发（workflow_dispatch）时跳过时段检查，强制执行
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "🔧 手动触发，跳过时段检查，强制执行"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           # 使用日期的 MD5 哈希确定今天应该在哪个时间点执行（真随机分布）
           # 0 = 8:00, 1 = 12:00, 2 = 18:00（北京时间）
           TODAY=$(date -u +%Y%m%d)
