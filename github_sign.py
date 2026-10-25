@@ -30,6 +30,7 @@ class Account:
     device_id: str = ""
     app_secret: str = "bkZVOXBiRzhZUW9BZTFrRmgrRTdleXJkbFNMZ2x3RUplQTB3d0hCMWo1bz0="
     version: str = "1.144.0"
+    build_code: str = "294"
     phone_brand: str = "Xiaomi"
     enabled: bool = True
 
@@ -41,8 +42,13 @@ class GitHubAutoSign:
         self.account = account
         self.base_url = "https://userapi.qiekj.com/"
         self.session = requests.Session()
+        # User-Agent 必须与官方 APP 格式一致，服务器从中解析版本号
+        ua = (
+            f"QEUser/{account.version} (com.qiekj.user; build:{account.build_code}; "
+            f"Android 13; userChannel:android_app; version:{account.version}) OkHttp/4.12.0"
+        )
         self.session.headers.update({
-            "User-Agent": "okhttp/4.12.0",
+            "User-Agent": ua,
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
         })
         self.results = []
@@ -80,18 +86,19 @@ class GitHubAutoSign:
             f"&timestamp={timestamp}"
             f"&token={self.account.token}"
             f"&version={self.account.version}"
-            f"&{path}"
+            f"&/{path}"
         )
         return hashlib.sha256(sign_str.encode('utf-8')).hexdigest()
     
     def _build_headers(self, path: str) -> Dict[str, str]:
-        """构建请求头"""
+        """构建请求头（与官方 APP HeadInterceptor 一致）"""
         timestamp = str(int(time.time() * 1000))
         sign = self._generate_sign(path, timestamp)
         
         return {
             "Authorization": self.account.token,
-            "version": self.account.version,
+            "token": self.account.token,
+            "Version": self.account.version,
             "channel": "android_app",
             "phoneBrand": self.account.phone_brand,
             "deviceId": self.account.device_id,
@@ -127,13 +134,13 @@ class GitHubAutoSign:
         self.log("🔍 检查签到状态...")
         result = self._post("signin/todaySignIn")
         
-        if result.get("code") == 200:
-            data = result.get("data", {})
-            # data 可能是布尔值或包含签到信息的对象
+        if result.get("code") == 0:  # 成功码是0，不是200
+            data = result.get("data") or {}
+            # 真实响应格式: {"isSignIn": false}
             if isinstance(data, bool):
                 is_signed = data
             else:
-                is_signed = data.get('signed', False) if isinstance(data, dict) else False
+                is_signed = data.get('isSignIn', False) if isinstance(data, dict) else False
             
             if is_signed:
                 self.log("✅ 今日已签到", "NOTICE")
@@ -149,12 +156,19 @@ class GitHubAutoSign:
         self.log("📝 执行签到...")
         result = self._post("signin/doUserSignIn")
         
-        if result.get("code") == 200:
-            data = result.get("data", {})
-            integral = data.get('integral', 'N/A')
-            con_day = data.get('conDay', 'N/A')
-            self.log(f"✅ 签到成功! 获得积分: {integral}, 连续签到: {con_day} 天", "NOTICE")
-            return True
+        if result.get("code") == 0:  # 成功码是0，不是200
+            data = result.get("data") or {}
+            # 真实响应: {"totalDays":2,"totalIntegral":3,"nextIntegral":4,"signInResult":true,"failReason":null}
+            if data.get('signInResult', False):
+                integral = data.get('totalIntegral', 'N/A')
+                total_days = data.get('totalDays', 'N/A')
+                next_integral = data.get('nextIntegral', 'N/A')
+                self.log(f"✅ 签到成功! 本次积分: +{integral}, 累计: {total_days} 天, 明日可得: {next_integral}", "NOTICE")
+                return True
+            else:
+                fail_reason = data.get('failReason') or '未知原因'
+                self.log(f"⚠️ 签到未生效: {fail_reason}", "WARNING")
+                return False
         else:
             msg = result.get('msg', '未知错误')
             self.log(f"❌ 签到失败: {msg}", "ERROR")
@@ -165,7 +179,7 @@ class GitHubAutoSign:
         self.log("📺 检查广告状态...")
         result = self._post("alipay/tap/adStatus")
         
-        if result.get("code") == 200:
+        if result.get("code") == 0:  # 成功码是0，不是200
             can_watch = result.get("data", False)
             if can_watch:
                 self.log("✅ 有可观看广告")
@@ -181,7 +195,7 @@ class GitHubAutoSign:
         self.log("✅ 上报广告完成...")
         result = self._post("alipay/admedia/finishFlag")
         
-        if result.get("code") == 200:
+        if result.get("code") == 0:  # 成功码是0，不是200
             self.log("✅ 广告完成上报成功")
             return True
         else:
@@ -193,7 +207,7 @@ class GitHubAutoSign:
         self.log("🎁 领取任务奖励...")
         result = self._post("task/getTaskReward")
         
-        if result.get("code") == 200:
+        if result.get("code") == 0:  # 成功码是0，不是200
             rewards = result.get("data", [])
             self.log(f"✅ 领取成功! 获得 {len(rewards)} 个奖励", "NOTICE")
             for reward in rewards:
@@ -210,7 +224,7 @@ class GitHubAutoSign:
         self.log("👤 获取用户信息...")
         result = self._post("user/info")
         
-        if result.get("code") == 200:
+        if result.get("code") == 0:  # 成功码是0，不是200
             data = result.get("data", {})
             nickname = data.get('nickname', 'N/A')
             integral = data.get('integral', 'N/A')

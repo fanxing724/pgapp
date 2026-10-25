@@ -24,6 +24,9 @@ class Config:
     # 应用版本（需要与官方版本一致或接近）
     version: str = "1.144.0"
     
+    # 应用构建号（versionCode）
+    build_code: str = "294"
+    
     # 渠道
     channel: str = "android_app"
     
@@ -44,17 +47,25 @@ class QieKjAutoSign:
     def __init__(self, config: Config):
         self.config = config
         self.session = requests.Session()
+        # User-Agent 必须与官方 APP 格式一致，服务器从中解析版本号
+        # 格式: QEUser/{versionName} ({package}; build:{versionCode}; Android {osVer}; userChannel:android_app; version:{versionName}) OkHttp/4.12.0
+        ua = (
+            f"QEUser/{config.version} (com.qiekj.user; build:{config.build_code}; "
+            f"Android 13; userChannel:android_app; version:{config.version}) OkHttp/4.12.0"
+        )
         self.session.headers.update({
-            "User-Agent": config.user_agent,
+            "User-Agent": ua,
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
         })
     
     def _generate_sign(self, path: str, timestamp: str) -> str:
         """
-        生成请求签名
-        sign = SHA-256("appSecret={secret}&channel=android_app&timestamp={ts}&token={token}&version={version}&{path}")
+        生成请求签名（与官方 APP HeadInterceptor 一致）
+        sign = SHA-256("appSecret={secret}&channel=android_app&timestamp={ts}&token={token}&version={version}&/{path}")
         
-        注意：appSecret 需要先进行 Base64 解码
+        注意：
+        - appSecret 需要先进行 Base64 解码
+        - 路径带前导斜杠（OkHttp encodedPath() 格式）
         """
         # 解码 Base64 编码的 secret
         try:
@@ -68,18 +79,19 @@ class QieKjAutoSign:
             f"&timestamp={timestamp}"
             f"&token={self.config.token}"
             f"&version={self.config.version}"
-            f"&{path}"
+            f"&/{path}"
         )
         return hashlib.sha256(sign_str.encode('utf-8')).hexdigest()
     
     def _build_headers(self, path: str) -> Dict[str, str]:
-        """构建请求头"""
+        """构建请求头（与官方 APP HeadInterceptor 一致）"""
         timestamp = str(int(time.time() * 1000))
         sign = self._generate_sign(path, timestamp)
         
         headers = {
             "Authorization": self.config.token,
-            "version": self.config.version,
+            "token": self.config.token,
+            "Version": self.config.version,
             "channel": self.config.channel,
             "phoneBrand": self.config.phone_brand,
             "deviceId": self.config.device_id,
@@ -114,13 +126,13 @@ class QieKjAutoSign:
         print("🔍 检查签到状态...")
         result = self._post("signin/todaySignIn")
         
-        if result.get("code") == 200:
-            data = result.get("data", False)
-            # data 可能是布尔值或包含签到信息的对象
+        if result.get("code") == 0:  # 成功码是0，不是200
+            data = result.get("data") or {}
+            # 真实响应格式: {"isSignIn": false}
             if isinstance(data, bool):
                 is_signed = data
             else:
-                is_signed = data.get('signed', False) if isinstance(data, dict) else False
+                is_signed = data.get('isSignIn', False) if isinstance(data, dict) else False
             status = "✅ 已签到" if is_signed else "⏳ 未签到"
             print(f"   状态: {status}")
             return is_signed
@@ -136,11 +148,15 @@ class QieKjAutoSign:
         print("📝 执行签到...")
         result = self._post("signin/doUserSignIn")
         
-        if result.get("code") == 200:
-            data = result.get("data", {})
-            print(f"   ✅ 签到成功!")
-            print(f"   📊 获得积分: {data.get('integral', 'N/A')}")
-            print(f"   📅 连续签到: {data.get('conDay', 'N/A')} 天")
+        if result.get("code") == 0:  # 成功码是0，不是200
+            data = result.get("data") or {}
+            # 真实响应: {"totalDays":2,"totalIntegral":3,"nextIntegral":4,"signInResult":true,"failReason":null}
+            if data.get('signInResult', False):
+                print(f"   ✅ 签到成功!")
+                print(f"   📊 本次积分: +{data.get('totalIntegral', 'N/A')}, 明日可得: {data.get('nextIntegral', 'N/A')}")
+                print(f"   📅 累计签到: {data.get('totalDays', 'N/A')} 天")
+            else:
+                print(f"   ⚠️ 签到未生效: {data.get('failReason') or '未知原因'}")
             return result
         else:
             print(f"   ❌ 签到失败: {result.get('msg', '未知错误')}")
@@ -154,11 +170,17 @@ class QieKjAutoSign:
         print("🎯 获取签到活动信息...")
         result = self._post("signin/signInAcList")
         
-        if result.get("code") == 200:
-            data = result.get("data", [])
-            print(f"   📋 可用活动数: {len(data)}")
-            for act in data:
-                print(f"      - {act.get('name', 'N/A')}: {act.get('desc', '')}")
+        if result.get("code") == 0:  # 成功码是0，不是200
+            data = result.get("data") or {}
+            # 真实格式: 单个活动对象，含 ruleSignInDTO.cycleCumulatives 积分规则
+            rule = data.get('ruleSignInDTO') or {}
+            cycle = rule.get('cycleCumulatives') or []
+            if cycle:
+                print(f"   📋 签到周期: {rule.get('cycle', len(cycle))} 天一轮")
+                for item in cycle:
+                    print(f"      - 第{item.get('day', '?')}天: +{item.get('amount', '?')} 积分")
+            else:
+                print(f"   📋 {data.get('info', '暂无活动详情')}")
             return result
         else:
             print(f"   ❌ 获取失败: {result.get('msg', '未知错误')}")
@@ -172,7 +194,7 @@ class QieKjAutoSign:
         print("📺 检查广告状态...")
         result = self._post("alipay/tap/adStatus")
         
-        if result.get("code") == 200:
+        if result.get("code") == 0:  # 成功码是0，不是200
             can_watch = result.get("data", False)
             status = "✅ 可观看" if can_watch else "⏸️ 暂无广告"
             print(f"   状态: {status}")
@@ -189,7 +211,7 @@ class QieKjAutoSign:
         print("✅ 上报广告完成...")
         result = self._post("alipay/admedia/finishFlag")
         
-        if result.get("code") == 200:
+        if result.get("code") == 0:  # 成功码是0，不是200
             print("   ✅ 广告完成上报成功")
             return True
         else:
@@ -208,7 +230,7 @@ class QieKjAutoSign:
         
         result = self._post("task/getTaskReward", data)
         
-        if result.get("code") == 200:
+        if result.get("code") == 0:  # 成功码是0，不是200
             rewards = result.get("data", [])
             print(f"   ✅ 领取成功! 获得 {len(rewards)} 个奖励")
             for reward in rewards:
@@ -226,7 +248,7 @@ class QieKjAutoSign:
         print(f"📋 申请任务 {task_id}...")
         result = self._post("markActivity/doApplyTask", {"taskId": task_id})
         
-        if result.get("code") == 200:
+        if result.get("code") == 0:  # 成功码是0，不是200
             print("   ✅ 任务申请成功")
             return True
         else:
@@ -241,7 +263,7 @@ class QieKjAutoSign:
         print(f"✅ 标记任务 {task_id} 完成...")
         result = self._post("markActivity/doMarkTask", {"taskId": task_id})
         
-        if result.get("code") == 200:
+        if result.get("code") == 0:  # 成功码是0，不是200
             print("   ✅ 任务标记成功")
             return True
         else:
@@ -291,7 +313,7 @@ class QieKjAutoSign:
         print("👤 获取用户信息...")
         result = self._post("user/info")
         
-        if result.get("code") == 200:
+        if result.get("code") == 0:  # 成功码是0，不是200
             data = result.get("data", {})
             print(f"   昵称: {data.get('nickname', 'N/A')}")
             print(f"   积分: {data.get('integral', 'N/A')}")
