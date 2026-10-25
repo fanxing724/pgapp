@@ -12,6 +12,10 @@ venv/
 env/
 *.egg-info/
 
+# Token 文件
+token_*.txt
+.qiekj_github_config.json
+
 # IDE
 .vscode/
 .idea/

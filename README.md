@@ -6,15 +6,45 @@
 [![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+## 🏗️ 系统架构
+
+```
+电脑端 (获取 Token) → GitHub (存储配置) → GitHub Actions (自动签到+广告)
+```
+
+- 💻 **电脑端**：运行 `get_token.py` 获取 Token，自动更新到 GitHub Secrets
+- ☁️ **GitHub Actions**：每天自动执行签到和观看广告
+- 📦 **GitHub 仓库**：存放所有工具和分析结果
+
 ## ✨ 特性
 
-- ☁️ **GitHub Actions 云端自动化** - 免费、无需服务器、每天自动执行
+- 🔑 **Token 自动获取** - 手机号+验证码一键获取，自动更新 GitHub Secrets
+- ☁️ **云端自动化** - GitHub Actions 免费运行，无需服务器
 - 🔐 **完整签名算法** - 基于官方 APK 提取的 appSecret
 - 👥 **多账号支持** - 批量签到、独立配置
 - 📺 **广告任务** - 自动观看广告领取奖励
 - 📤 **消息推送** - Server酱、Bark、Webhook
 - 🛡️ **防风控** - 账号间延迟、请求间隔控制
 - 📊 **详细日志** - GitHub Actions 格式、本地彩色输出
+
+## 🚀 快速开始（3 步）
+
+```bash
+# 1. 克隆仓库
+git clone git@github.com:fanxing724/pgapp.git
+cd pgapp
+
+# 2. 获取 Token（电脑端运行）
+./获取Token.sh
+
+# 3. 启用 GitHub Actions（网页操作）
+# 访问 https://github.com/fanxing724/pgapp/actions
+# 点击 "Enable workflow"
+```
+
+**完成！** GitHub Actions 将每天自动执行签到和观看广告。
+
+📖 **详细教程**：[完整方案.md](./完整方案.md)
 
 ## 📦 文件说明
 
@@ -155,7 +185,8 @@ crontab -e
 
 ## 📖 相关文档
 
-- ⚡ [快速参考](./快速参考.md) - **常用命令和配置速查表**
+- 📋 [完整方案](./完整方案.md) - **完整架构和使用流程（推荐阅读）**
+- ⚡ [快速参考](./快速参考.md) - 常用命令和配置速查表
 - ☁️ [GitHub Actions 配置指南](./GitHub_Actions_配置指南.md) - 云端自动化详细教程
 - 🚀 [GitHub 部署清单](./GitHub_部署清单.md) - 部署步骤检查表
 - 📖 [使用说明](./自动签到_使用说明.md) - 详细的配置和故障排查指南

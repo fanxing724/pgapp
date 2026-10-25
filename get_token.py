@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-切客纪 Token 自动获取工具
-通过手机号+验证码登录获取 Token
+切客纪 Token 自动获取工具（电脑端运行）
+功能：手机号登录获取 Token → 可选自动更新到 GitHub Secrets
 """
 
 import hashlib
 import time
 import base64
+import json
+import os
+import sys
 import requests
+from pathlib import Path
 from typing import Optional, Dict, Any
 
 
@@ -70,15 +74,7 @@ class QieKjLogin:
             return {"code": -1, "msg": str(e)}
 
     def send_sms_code(self, phone: str) -> bool:
-        """
-        发送短信验证码
-
-        参数:
-            phone: 手机号
-
-        返回:
-            成功返回 True，失败返回 False
-        """
+        """发送短信验证码"""
         print(f"\n📱 正在向 {phone} 发送验证码...")
 
         result = self._post("common/sms/sendCode", {
@@ -95,16 +91,7 @@ class QieKjLogin:
             return False
 
     def login_and_get_token(self, phone: str, verify_code: str) -> Optional[str]:
-        """
-        使用手机号+验证码登录，获取 Token
-
-        参数:
-            phone: 手机号
-            verify_code: 短信验证码
-
-        返回:
-            成功返回 Token 字符串，失败返回 None
-        """
+        """登录获取 Token"""
         print(f"\n🔐 正在登录...")
 
         result = self._post("user/reg", {
@@ -128,13 +115,186 @@ class QieKjLogin:
             return None
 
 
+class GitHubSecretsManager:
+    """GitHub Secrets 自动更新管理器"""
+
+    def __init__(self, repo: str, github_token: str):
+        """
+        参数:
+            repo: 仓库地址，格式 "username/repo"
+            github_token: GitHub Personal Access Token (需要 repo 权限)
+        """
+        self.repo = repo
+        self.github_token = github_token
+        self.api_base = "https://api.github.com"
+        self.headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+
+    def _get_public_key(self) -> Optional[Dict[str, str]]:
+        """获取仓库公钥"""
+        url = f"{self.api_base}/repos/{self.repo}/actions/secrets/public-key"
+        try:
+            response = requests.get(url, headers=self.headers, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"❌ 获取公钥失败: {e}")
+            return None
+
+    def _encrypt_secret(self, public_key: str, secret_value: str) -> Optional[str]:
+        """使用仓库公钥加密 secret"""
+        try:
+            from nacl import encoding, public
+
+            public_key_obj = public.PublicKey(public_key.encode("utf-8"), encoding.Base64Encoder())
+            sealed_box = public.SealedBox(public_key_obj)
+            encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
+            return base64.b64encode(encrypted).decode("utf-8")
+        except ImportError:
+            return None
+
+    def update_secret(self, secret_name: str, secret_value: str) -> bool:
+        """更新 GitHub Secret"""
+        # 检查 pynacl
+        try:
+            from nacl import encoding, public
+        except ImportError:
+            print("❌ 缺少 pynacl 库，无法加密 Secret")
+            print("   请运行: pip install pynacl")
+            return False
+
+        print(f"\n🔄 正在更新 GitHub Secret: {secret_name}")
+
+        # 获取公钥
+        key_data = self._get_public_key()
+        if not key_data:
+            return False
+
+        # 加密
+        encrypted_value = self._encrypt_secret(key_data["key"], secret_value)
+        if not encrypted_value:
+            return False
+
+        # 更新 Secret
+        url = f"{self.api_base}/repos/{self.repo}/actions/secrets/{secret_name}"
+        data = {
+            "encrypted_value": encrypted_value,
+            "key_id": key_data["key_id"]
+        }
+
+        try:
+            response = requests.put(url, headers=self.headers, json=data, timeout=30)
+            if response.status_code in [201, 204]:
+                print(f"✅ Secret '{secret_name}' 更新成功！")
+                return True
+            else:
+                print(f"❌ 更新失败: HTTP {response.status_code}")
+                print(f"   响应: {response.text}")
+                return False
+        except Exception as e:
+            print(f"❌ 更新失败: {e}")
+            return False
+
+
+def load_github_config() -> Dict[str, str]:
+    """加载保存的 GitHub 配置"""
+    config_file = Path.home() / ".qiekj_github_config.json"
+    if config_file.exists():
+        try:
+            with open(config_file, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+
+def save_github_config(repo: str, token: str):
+    """保存 GitHub 配置"""
+    config_file = Path.home() / ".qiekj_github_config.json"
+    try:
+        with open(config_file, 'w') as f:
+            json.dump({"repo": repo, "github_token": token}, f)
+        os.chmod(config_file, 0o600)  # 仅所有者可读写
+        print(f"✅ GitHub 配置已保存到: {config_file}")
+    except Exception as e:
+        print(f"⚠️  配置保存失败: {e}")
+
+
+def update_github_secrets(token: str):
+    """引导用户更新 GitHub Secrets"""
+    print("\n" + "="*60)
+    print("🔧 GitHub Secrets 自动更新")
+    print("="*60)
+
+    # 加载已保存的配置
+    saved_config = load_github_config()
+
+    # 获取仓库信息
+    default_repo = saved_config.get("repo", "fanxing724/pgapp")
+    repo = input(f"\n📦 GitHub 仓库 (默认: {default_repo}): ").strip() or default_repo
+
+    # 获取 GitHub Token
+    saved_gh_token = saved_config.get("github_token", "")
+    if saved_gh_token:
+        use_saved = input("🔑 检测到已保存的 GitHub Token，是否使用? (y/n, 默认 y): ").strip().lower()
+        if use_saved in ['', 'y']:
+            github_token = saved_gh_token
+        else:
+            github_token = input("🔑 请输入 GitHub Personal Access Token: ").strip()
+    else:
+        print("\n💡 需要 GitHub Personal Access Token 才能自动更新 Secrets")
+        print("   获取地址: https://github.com/settings/tokens")
+        print("   权限要求: 勾选 'repo' 完整权限")
+        github_token = input("\n🔑 请输入 GitHub Personal Access Token: ").strip()
+
+    if not github_token:
+        print("⚠️  未提供 Token，跳过自动更新")
+        return False
+
+    # 保存配置
+    save_github_config(repo, github_token)
+
+    # 更新 Secrets
+    manager = GitHubSecretsManager(repo, github_token)
+
+    # 询问更新方式
+    print("\n📝 选择更新方式:")
+    print("   1. 单账号 (QIEKJ_TOKEN)")
+    print("   2. 多账号 (ACCOUNTS_CONFIG)")
+    choice = input("请选择 (1/2, 默认 1): ").strip() or "1"
+
+    if choice == "1":
+        return manager.update_secret("QIEKJ_TOKEN", token)
+    else:
+        # 读取现有的 ACCOUNTS_CONFIG 或创建新的
+        print("\n💡 多账号配置")
+        name = input("账号备注名 (默认: 我的账号): ").strip() or "我的账号"
+
+        config = {
+            "accounts": [
+                {
+                    "name": name,
+                    "token": token,
+                    "device_id": "",
+                    "enabled": True
+                }
+            ]
+        }
+        return manager.update_secret("ACCOUNTS_CONFIG", json.dumps(config, ensure_ascii=False))
+
+
 def main():
     """主函数"""
     print("="*60)
-    print("🔑 切客纪 Token 自动获取工具")
+    print("🔑 切客纪 Token 自动获取工具（电脑端）")
     print("="*60)
-    print("\n💡 此工具通过手机号+验证码登录获取 Token")
-    print("⚠️  请确保使用的是你自己的手机号\n")
+    print("\n💡 工作流程:")
+    print("   1. 本工具在电脑上运行，获取 Token")
+    print("   2. 自动更新到 GitHub Secrets（可选）")
+    print("   3. GitHub Actions 每天自动签到+看广告")
+    print("\n⚠️  请确保使用的是你自己的手机号\n")
 
     # 创建登录实例
     login = QieKjLogin()
@@ -163,62 +323,68 @@ def main():
     # 登录获取 Token
     token = login.login_and_get_token(phone, verify_code)
 
-    if token:
-        print("\n" + "="*60)
-        print("🎉 Token 获取成功！")
-        print("="*60)
-        print(f"\n📋 你的 Token:\n")
-        print(f"{token}\n")
-        print("="*60)
+    if not token:
+        print("\n❌ Token 获取失败")
+        return
 
-        # 保存到文件
-        save = input("\n💾 是否保存 Token 到文件? (y/n): ").strip().lower()
-        if save == 'y':
-            filename = f"token_{phone}.txt"
-            with open(filename, 'w') as f:
-                f.write(f"手机号: {phone}\n")
-                f.write(f"获取时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Token: {token}\n")
-            print(f"✅ Token 已保存到: {filename}")
+    # 显示 Token
+    print("\n" + "="*60)
+    print("🎉 Token 获取成功！")
+    print("="*60)
+    print(f"\n📋 你的 Token:\n")
+    print(f"{token}\n")
+    print("="*60)
 
-        # 复制到剪贴板提示
-        print("\n💡 提示:")
-        print("   1. 请妥善保管 Token，不要分享给他人")
-        print("   2. Token 有效期通常为 7-30 天")
-        print("   3. 过期后需要重新获取")
-        print("\n📝 下一步:")
-        print("   将 Token 添加到 GitHub Secrets 或本地配置文件")
+    # 保存到本地文件
+    token_dir = Path.home() / ".qiekj_tokens"
+    token_dir.mkdir(exist_ok=True)
+    token_file = token_dir / f"token_{phone}.txt"
+    with open(token_file, 'w') as f:
+        f.write(f"手机号: {phone}\n")
+        f.write(f"获取时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Token: {token}\n")
+    os.chmod(token_file, 0o600)
+    print(f"\n💾 Token 已保存到: {token_file}")
 
-        # 询问是否直接配置到 GitHub
-        print("\n" + "-"*60)
-        config_now = input("🔧 是否现在配置到 GitHub Secrets? (y/n): ").strip().lower()
-        if config_now == 'y':
-            print("\n📋 请复制以下内容到 GitHub Secrets:")
-            print("\n方式一：单账号配置")
-            print(f"   Name: QIEKJ_TOKEN")
-            print(f"   Value: {token}")
-            print("\n方式二：多账号配置（推荐）")
-            print(f"   Name: ACCOUNTS_CONFIG")
-            print(f"   Value:")
-            print(f"""   {{
+    # 询问是否自动更新 GitHub Secrets
+    print("\n" + "-"*60)
+    auto_update = input("🚀 是否自动更新到 GitHub Secrets? (y/n, 默认 y): ").strip().lower()
+
+    if auto_update in ['', 'y']:
+        if update_github_secrets(token):
+            print("\n" + "="*60)
+            print("🎊 全部完成！")
+            print("="*60)
+            print("\n✅ Token 已获取并更新到 GitHub Secrets")
+            print("☁️  GitHub Actions 将使用新 Token 自动签到")
+            print("\n🔗 查看运行状态:")
+            print(f"   https://github.com/{load_github_config().get('repo', 'fanxing724/pgapp')}/actions")
+        else:
+            print("\n⚠️  自动更新失败，请手动配置")
+            print_manual_config(token)
+    else:
+        print_manual_config(token)
+
+
+def print_manual_config(token: str):
+    """打印手动配置说明"""
+    print("\n📝 手动配置 GitHub Secrets:")
+    print("   1. 访问: https://github.com/fanxing724/pgapp/settings/secrets/actions")
+    print("   2. 点击 'New repository secret'")
+    print("   3. 添加以下 Secret:")
+    print(f"\n      Name: QIEKJ_TOKEN")
+    print(f"      Value: {token}")
+    print("\n   或使用多账号配置 (ACCOUNTS_CONFIG):")
+    print(f'''   {{
      "accounts": [
        {{
-         "name": "账号_{phone[-4:]}",
+         "name": "我的账号",
          "token": "{token}",
          "device_id": "",
          "enabled": true
        }}
      ]
-   }}""")
-            print("\n🔗 配置地址: https://github.com/fanxing724/pgapp/settings/secrets/actions")
-    else:
-        print("\n❌ Token 获取失败")
-        print("\n可能的原因:")
-        print("   1. 验证码错误或已过期")
-        print("   2. 网络连接问题")
-        print("   3. 服务器异常")
-        print("\n💡 建议:")
-        print("   重新运行脚本，使用新的验证码")
+   }}''')
 
 
 if __name__ == "__main__":
@@ -228,3 +394,5 @@ if __name__ == "__main__":
         print("\n\n⚠️  用户取消操作")
     except Exception as e:
         print(f"\n\n❌ 发生错误: {e}")
+        import traceback
+        traceback.print_exc()
